@@ -1,112 +1,52 @@
-// Importer la classe Recette
-import Recipe from "../models/recipe.js";
-// Importer le singleton API et sa classe
-import singletonRecipesApi, { RecipesApi } from "./../api/recipesApi.js";
+// Importer le singleton API
+import singletonRecipesApi from "./../api/recipesApi.js";
 // Importer la fabrique de recette
 import * as facRecipe from "./../factories/recipe.js";
-// Importer les fonctions utilitaires pour gérer les listes de filtres
-import * as dropdown from "./../util/dropdown.js";
+// Importer les fonctions utilitaires pour gérer les custom dropdown
+import {
+  sortSet,
+  getFilters,
+  getAnyTags,
+  addDropdownToggleEvents,
+  addDropdownFilterEvents,
+} from "./../util/dropdown.js";
 // Importer les fonctions utilitaires pour créer des éléments du DOM
 import * as Dom from "./../util/dom.js";
-// Importer les fonctions de recherche
-import * as search from "./../util/search.js";
-/**
- * Ajouter un évènement à chaqu'un des boutons ouvrant les listes déroulantes
- * add events to show dropdown list for click toggle button, focus, and blur
- *
- */
-function addDropdownToggleEvents() {
-  /** @type {NodeList} une collection avec les trois boutons pour ouvrir fermer les trois listes déroulantes */
-  const toggleButtons = document.querySelectorAll(".filters__dropdown__toggle");
+// Importer les fonctions de la recherche globale
+import { findRecipes } from "./../util/search.js";
+// Importer les fonctions des recherche par étiquettes
+import { findBy } from "./../util/searchtags.js";
 
-  // Parcourir les trois boutons toggle
-  toggleButtons.forEach((elm) => {
-    /** @type {string} l'attribut data-type de ce bouton toggle contient le nom du type des éléments à rechercher */
-    const searchName = elm.dataset.type;
-    /** @type {string} l'identifiant d'une custom liste déroulante correspondant à ce bouton toggle actuellement lu */
-    const idDropbox = `${searchName}-dropdown`;
-
-    /** @type {HTMLDivElement} l'élémént div contenant toute la custom iste déroulante */
-    const dropdown = document.querySelector(`#${idDropbox}`);
-    // Ecouter l'évènement click de toggle bouton pour ...
-    elm.addEventListener("click", () => {
-      if (dropdown.classList.contains("show")) {
-        dropdown.classList.remove("show"); // ... enlever la classe show à sa dropdown
-        dropdown.classList.add("col-3");
-        dropdown.classList.remove("col-5");
-      } else {
-        closeAllDropdowns();
-        dropdown.classList.add("show"); //  ... ou ajouter la classe show à sa dropdown
-        dropdown.classList.add("col-5");
-        dropdown.classList.remove("col-3");
-      }
-    });
-  });
-}
-
-/**
- * Cliquer en dehors d'une liste custom dropdown
- * ferme toute liste ouverte
- *
- * @param {*} event
- */
-window.onclick = function (event) {
-  if (
-    !event.target.matches([
-      ".filters__dropdown",
-      ".filters__dropdown ul",
-      ".filters__dropdown ul li",
-      ".filters__dropdown__toggle",
-      ".filters__dropdown__toggle i",
-      ".filters__dropdown__search",
-    ])
-  ) {
-    closeAllDropdowns();
-  }
-};
-
-/**
- * Fermer toutes les listes custom dropdown
- * avec reinitialisation de la largeur
- */
-function closeAllDropdowns() {
-  const openedDropdowns = document.querySelectorAll(".show");
-  openedDropdowns.forEach((dropdown) => {
-    dropdown.classList.remove("show");
-    dropdown.classList.remove("col-5");
-    dropdown.classList.add("col-3");
-  });
-}
+let needles = new Array();
 
 /**
  * Afficher les données des recettes
- * dans des html cards sur la page d'accueil en utilisant
- * la factory Recipe
+ * dans des html cards.
  *
  * @param {Array<Recipe>} recipes - une liste de recettes
  */
 function displayData(recipes) {
-  /** @type {number} un compteur pour sotir de la boucle */
-  let i = 0;
   /** @type {HTMLDivElement} le conteneur html pour les recettes */
   const parent = document.getElementById("recipes");
   // Toujours enlever les recettes avant d'en afficher à nouveau
   parent.replaceChildren();
+
   // il y a des recettes à afficher
   if (Array.isArray(recipes) && recipes.length) {
-    console.log(`Nombre de recettes: ${recipes.length}`);
+    console.log(`    ===> ${recipes.length} recettes affichées\n`);
     try {
       // Parcourir la liste des recettes
       recipes.forEach((rec) => {
-        i++;
         /** @type {[number, Object]} une fonction pour fabriquer la html card d'une recette */
         const recipeModel = facRecipe.recipeFactory(rec);
         /** @type {HTMLElement} un article contenant une recette complète */
         const recipeCardDOM = recipeModel.getRecipeCardDOM();
         // Ajouter cette html card fabriquée pour l'afficher dans la page
         parent.appendChild(recipeCardDOM);
-        // Sortir de la boucle rapidement pour les tests
-        if (i == 999) throw "fin";
+        // Imprimer sur la console les recettes
+        recipeCardDOM.addEventListener("click", () =>
+          console.log(rec.toString())
+        );
       });
     } catch (error) {
       console.log(error);
@@ -123,39 +63,140 @@ function displayData(recipes) {
 }
 
 /**
- * Ajouter les évènement de recherche
+ * Afficher dans les dropdowns leurs mots clés de recherche
+ * en les détectant à partir d'une liste de recettes
+ *
+ * @param {Array<Recipe>} recipes - une liste de recettes
+ */
+function displayTags(recipes) {
+  // Obtenir la liste des ingrédients, des ustensiles et de l'électroménager
+  // de cette collection de recette
+  let {
+    /** @type {Set} */ ingredients,
+    /** @type {Set} */ ustensils,
+    /** @type {Set} */ appliances,
+  } = getAnyTags(recipes);
+
+  /** @type {HTMLElement} liste ul des ingrédients */
+  const listIngredients = document.getElementById("ingredients-list");
+  /** @type {HTMLElement} liste ul des ustensiles */
+  const listUstensils = document.getElementById("ustensils-list");
+  /** @type {HTMLElement} liste ul de l'électroménager */
+  const listAppliances = document.getElementById("appliances-list");
+
+  /** @type {Array<Object>} la liste des étiquettes séléctionnées et affichées */
+  const filters = getFilters();
+
+  // Remplir et afficher une dropdown avec des ingrédients
+  // et founir la liste des ingredients à ne pas afficher (exclusion)
+  displayListItem(
+    listIngredients,
+    ingredients,
+    filters.filter((tag) => tag.list === "ingredients"),
+    recipes
+  );
+
+  // Remplir une dropdown avec les ustensiles
+  // et founir la liste des ustensiles à ne pas afficher (exclusion)
+  displayListItem(
+    listUstensils,
+    ustensils,
+    filters.filter((tag) => tag.list === "ustensils"),
+    recipes
+  );
+
+  // Renseigner une dropdown avec l'électroménager
+  // et founir la liste de l'électroménager à ne pas afficher (exclusion)
+  displayListItem(
+    listAppliances,
+    appliances,
+    filters.filter((tag) => tag.list === "appliances"),
+    recipes
+  );
+}
+
+/**
+ * Assembler dans une liste html ul les éléments stockés
+ * dauns une collection Set pour les ingrédients, les ustensiles
+ * et pour l'électroménager
+ *
+ * @param {HTMLElement} aList une liste html ul
+ * @param {Set} someItems une collection d'ingrédients, d'ustensiles ou de l'électroménager
+ * @param {Array<Object>} excludes une liste de filtres obtenue à partir des tag sélectionnés
+ * @param {Array<Recipe>} recipes - une liste de recettes
+ */
+function displayListItem(aList, someItems, excludes, recipes) {
+  /** @type {HTMLLIElement} un élément li contenant un ingrédient */
+  let listItem;
+
+  // Supprimer tous les items li existants
+  aList.replaceChildren();
+
+  // Si il y a des étiquettes séléctionnées et affichées
+  // alors il y a des items à ne pas montrer dans les listes déroulantes
+  if (excludes.length > 0) {
+    // Parcourir une collection d'ingredients, d'ustensiles ou d'électromenager
+    someItems.forEach(
+      function (item) {
+        // this est un tableau à exclure
+        if (this.includes(item)) {
+          someItems.delete(item); // exclure
+        }
+      },
+      // Envoyer dans le scope de la boucle un tableau d'exclusion de libellés de filtres
+      excludes.map((e) => e.item) // Ne prendre que le libellé des filtres
+    );
+  }
+
+  if (someItems.size === 0) {
+    listItem = Dom.getListItem("", "Aucun élément");
+    // Ajouter l'élément à la liste concernée
+    aList.appendChild(listItem);
+  } else {
+    // Trier sur place par ordre ascendant la liste des items
+    sortSet(someItems);
+    // Parcourir les items ...
+    someItems.forEach((item) => {
+      listItem = Dom.getListItem("", item);
+      // Ce data attribut permet de marquer l'item pour identifier son type
+      listItem.setAttribute("data-type", aList.dataset.type);
+      // Ajouter l'évènement pour ajouter une étiquette de filtre
+      // en cliquant sur un list-item d'une dropdown
+      listItem.addEventListener("click", (event) =>
+        clickListItem(event, recipes)
+      );
+      // Ajouter l'élément à la liste concernée
+      aList.appendChild(listItem);
+      // Raz
+      item = null;
+    });
+  }
+}
+
+/**
+ * Ajouter les évènements de recherche
+ * lors de la saisie de caratères dans la zone
+ * ou de soumission du formulaire
+ * Lancer la recherche générale des recettes (axe de recherche 1)
  */
 const addSearchEvents = () => {
-  /** @type string le texte saisi dans la zone de recherche par l'utilisateur */
-  let needle = "";
+  /** @type {Array<Recipe>} la liste des objets recettes trouvés */
+  let recipesFound = [];
+
   /** @type {HTMLInputElement} la zone de texte pour la recherche globale */
   const searchInput = document.getElementById("search-input");
+
   // Ecouter les caractères saisis dans la zone de texte
-  searchInput.addEventListener("input", (event) => {
-    // le texte recherché
-    needle = event.currentTarget.value.trim();
-    // La recherche globale ne commence que quand l'utilisateur rentre 3 caractères
-    if (needle.length >= 3) {
-      /** @type {Array<Recipe>} un tableau de recettes filtrées par la recherche */
-      const found = search.findRecipes(needle);
-      // Afficher le résultat de la recherche
-      displayData(found);
-    } else {
-      /** @type {HTMLParagraphElement} paragraphe affichant qu'aucune recette n'a été trouvée*/
-      const empty = document.querySelector(".recipes__empty");
-      /** @type {NodeList} tous les articles recettes affichés dans la page*/
-      const articles = document.querySelectorAll(
-        "#recipes article.card-recipe"
-      );
-      // Si toutes les recettes connues ne sont pas affichés à l'écran ..
-      if (
-        empty !== null ||
-        articles.length !== singletonRecipesApi.getDataRecipes().length
-      ) {
-        // .. lors afficher toutes les recettes connues
-        displayData(singletonRecipesApi.getDataRecipes());
-      }
-    }
+  searchInput.addEventListener("input", () => {
+    // Mémoriser la recherche saisie
+    needles.push(searchInput.value.trim());
+    // Effectuer une recherche globale, une recherche par étiquettes et afficher le résultat
+    recipesFound = filterBySearch(singletonRecipesApi.getDataRecipes());
+    recipesFound = filterByTags(recipesFound);
+    // Afficher le résultat de la recherche
+    displayData(recipesFound);
+    // Afficher les mot-clés de recherche dans les dropdowns
+    displayTags(recipesFound);
   });
 
   /** @type {HTMLElement} le formulaire de recherche globale */
@@ -163,61 +204,185 @@ const addSearchEvents = () => {
   // Ecouter la soumission du formulaire
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    needle = event.currentTarget.querySelector(".form-control").value;
-    // La recherche globale ne commence que quand l'utilisateur rentre 3 caractères
-    if (needle.length >= 3) {
-      /** @type {Array<Recipe>} un tableau de recettes filtrées par la recherche */
-      const found = search.findRecipes(needle);
-      // Afficher le résultat de la recherche
-      displayData(found);
-    } else {
-      // Effacer les caractères saisis
-      event.currentTarget.querySelector(".form-control").value = "";
-      // Afficher toutes les recettes connues
-      displayData(singletonRecipesApi.getDataRecipes());
-    }
+    // Vider les recherches précédentes
+    needles.splice(0, needles.length);
+    // Mémoriser la recherche saisie
+    needles.push(searchInput.value.trim());
+
+    // Effectuer une recherche globale, une recherche par étiquettes et afficher le résultat
+    recipesFound = filterBySearch(singletonRecipesApi.getDataRecipes());
+    recipesFound = filterByTags(recipesFound);
+    // Afficher le résultat de la recherche
+    displayData(recipesFound);
+    // Afficher les mot-clés de recherche dans les dropdowns
+    displayTags(recipesFound);
   });
 };
 
 /**
+ * Cliquer sur un item dans une des listes ingredients, ustensiles
+ * ou électroménager
+ * Ajouter un tag bleu, rouge ou vert dans la zone des filtres d'étiquettes
+ * Lancer le filtre des recettes par les étiquettes (axe de recherche 2)
+ *
+ * @param {Event} event un évènement click sur un list-item bleu, rouge, vert
+ */
+function clickListItem(event, recipes) {
+  /** @type {string} le type du filtre cliqué */
+  const filterType = event.currentTarget.dataset.type;
+  /** @type {string} le texte de l'élément cliqué  */
+  const tagText = event.currentTarget.textContent;
+  /** @type {HTMLDivElement} le conteneur des étiquettes de filtre */
+  const parent = document.getElementById("tags");
+
+  /** @type {HTMLSpanElement} une étiquette html bleue, verte ou rouge */
+  const aTag = Dom.getSpan(
+    ["tags__tag", "px-2", "py-1", "m-1", "my-2", "rounded"],
+    `${tagText}`
+  );
+  // Typer l'étiquette: ingredient, ustensile, électroménager
+  aTag.setAttribute("data-type", filterType);
+
+  /** @type {HTMLElement} - l'icone croix pour fermer ce tag */
+  const icone = Dom.getIcone([
+    "tags__tag__cross",
+    "bi",
+    "bi-x-circle",
+    "ml-3",
+    "my-auto",
+  ]);
+
+  // Ajouter la croix au tag
+  aTag.append(icone);
+
+  // Ajouter l'évènement pour faire disparaitre l'étiquette avec sa croix
+  aTag.addEventListener("click", (event) => closeTag(event));
+
+  // Ajouter ce tag pour l'afficher sur la ligne des tags
+  parent.appendChild(aTag);
+  console.log(`    ADD Tag: ${tagText}`);
+
+  /** @type {string} l'identifiant du champ de saisi pour la recherche d'un ingrédient, d'un ustensile ou d'un appareil */
+  const idSearch = `${filterType}-search`;
+  /** @type {HTMLFormElement} le champ de saisi */
+  const input = document.getElementById(idSearch);
+  // Remise à blanc de la zone de saisie  des filtres d'étiquettes
+  input.value = "";
+
+  // Filtrer les recettes à partir des tags sélectionnés et affichés
+  recipes = filterByTags(recipes);
+
+  // Afficher le résultat de la recherche
+  displayData(recipes);
+  // Afficher les mot-clés de recherche dans les dropdowns
+  displayTags(recipes);
+}
+
+/**
+ * Fermer un tag pour enlever une étiquette de recherche
+ * Lancer le filtre des recettes par les étiquettes (axe de recherche 2)
+ *
+ * @param {Event} event un évènement click sur la croix d'une étiquette
+ */
+function closeTag(event) {
+  /** @type {HTMLDivElement} le conteneur html des étiquettes de filtre */
+  const parent = document.getElementById("tags");
+  /** @type {HTMLSpanElement} l'étiquette cliquée  */
+  const tag = event.currentTarget;
+
+  // faire disparaitre le tag de l'affichage
+  parent.removeChild(tag);
+  console.log(`    CLOSE Tag: ${tag.textContent}`);
+
+  // et filtrer à partir de toutes les recettes
+  let recipesFound = [];
+  recipesFound = filterBySearch(singletonRecipesApi.getDataRecipes());
+  recipesFound = filterByTags(recipesFound);
+
+  // Afficher le résultat de la recherche
+  displayData(recipesFound);
+  // Afficher les mot-clés de recherche dans les dropdowns
+  displayTags(recipesFound);
+}
+
+/**
+ * Effectuer une recherche globale de recettes,
+ * Filtrer ces recettes à partir d'étiquettes
+ * depuis tableau d'objets de filtres
+ * La recherche globale ne commence que quand l'utilisateur rentre 3 caractères
+ *
+ * @param {Array<Recipe>} recipes une liste de recettes filtrée ou toutes les recettes connues
+ * @returns {Array<Recipe>} la liste des objets recettes trouvés
+ */
+const filterBySearch = (recipes = []) => {
+  console.log("    ===> Filter by Search");
+  /** @type {string} la dernière recherche saisie */
+  const needle = needles.at(-1) !== undefined ? needles.at(-1) : "";
+
+  if (needle.length < 3 && !areAllRecipesDiplayed()) {
+    if (recipes.length !== singletonRecipesApi.Count) {
+      recipes = singletonRecipesApi.getDataRecipes();
+    }
+  } else {
+    // Effectuer une recherche globale dans toutes les recettes connues
+    recipes = findRecipes(needle, recipes);
+  }
+
+  return recipes;
+};
+
+/**
+ *
+ * @param {Array<Recipe>} recipes une liste de recettes
+ * @returns {Array<Recipe>} la liste des objets recettes trouvés
+ */
+const filterByTags = (recipes = []) => {
+  console.log("    ===> Filter by Tags");
+
+  /** @type {Array<Object>} la liste des tags séléctionnés et affichés */
+  const filters = getFilters();
+
+  // Parcourir la liste des tags des filtres sélectionnés
+  filters.forEach((filtre) => {
+    // Déterminer le type de filtre à appliquer à l'item
+    recipes = findBy(filtre.item, recipes, filtre.list);
+  });
+
+  return recipes;
+};
+
+/**
+ * Est-ce que toutes les recettes connues sont affichées
+ * dans la page ?
+ *
+ * @returns {boolean} repondre à la question
+ */
+const areAllRecipesDiplayed = () => {
+  /** @type {NodeList} toutes les Html Cards recettes affichées dans la page */
+  const articles = document.querySelectorAll("#recipes article.card-recipe");
+  /** @type {number} le nombre de recettes actuellement affichées */
+  const displayedRecipes = articles.length;
+
+  return displayedRecipes === singletonRecipesApi.Count;
+};
+
+/**
  * Point d'entrée de l'application
- * Obtenir les données de manière asynchrone et
- * les afficher
+ * Obtenir les données et les afficher
  */
 function init() {
-  /** @type {HTMLElement} liste ul des ingrédients */
-  const listIngredients = document.getElementById("listIngredients");
-  /** @type {HTMLElement} liste ul des ustensiles */
-  const listUstensils = document.getElementById("listUstensils");
-  /** @type {HTMLElement} liste ul de l'électroménager */
-  const listAppliances = document.getElementById("listAppliances");
-
-  // Renseigner une dropdown avec les ingrédients uniques provenant dynamiquement des données
-  dropdown.displayListItem(listIngredients, Recipe.allIngredients);
-
-  // Renseigner une dropdown avec les ustensiles unique provenant dynamiquement des données
-  dropdown.displayListItem(listUstensils, Recipe.allUstensils);
-
-  // Renseigner une dropdown avec les ustensiles unique provenant dynamiquement des données
-  dropdown.displayListItem(listAppliances, Recipe.allAppliances);
-
-  // Ajouter les évènements des dropdowns (UI open/close)
-  addDropdownToggleEvents();
-
-  // Ajoute les évènements de recherche
+  // Ajouter les évènements de recherche globale (axe 1)
   addSearchEvents();
 
-  /** @type {Array<Recipe>} un tableau avec toutes les recettes connues */
-  const allRecipes = singletonRecipesApi.getDataRecipes();
+  /** @type {HTMLInputElement} le bouton de soumission de la recherche globale */
+  const submit = document.getElementById("search-recipes");
+  // Lancer une première recherche sans filtre pour afficher
+  // une première fois toutes les recettes connues
+  submit.click();
 
-  // Afficher le nombre d'ingredients, d'ustensiles et d'électroménager mémorisés dans les variables statiques
-  // des objets recette de la classe Recipe
-  console.log(`Ingrédients trouvés: ${Recipe.allIngredients.size}`);
-  console.log(`Ustensiles trouvés: ${Recipe.allUstensils.size}`);
-  console.log(`Electoménager trouvé: ${Recipe.allAppliances.size}`);
-
-  // Afficher les données
-  displayData(allRecipes);
+  // Ajouter les évènements des dropdowns
+  addDropdownToggleEvents();
+  addDropdownFilterEvents();
 }
 
 init();
