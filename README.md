@@ -21,11 +21,6 @@ Réaliser le site de recettes de cuisine les petits plats pour la formation Open
 - La librairie Bootstrap 4.6.2 est utilisée pour présenter l'affichage. Elle est fournie par BootstrapCDN.
 - Le dossier **docs/** contient la fiche d'investigation, les algorigrammes, le détail des benchmarks.
 
-## Changement du repository Github
-
-L'historique du repository Git et son remote ont été recrés le 30 aôut 2022 à partir de l'historique du repository ayant servi le temps du développement. Le premier repository du projet a été utilisé du 24/07/2022 au 29/08/2022.
-Le repository actuel est plus clair.
-
 ## Liens
 
 - Voir le site sur github pages : [Openclassrooms projet 7: Les petits plats](https://sferrer-dev.github.io/projet-7-petits-plats/)
